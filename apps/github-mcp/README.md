@@ -8,7 +8,7 @@ GitHub MCP server for interacting with GitHub API.
 |-----------|---------|
 | Package Name | github-mcp |
 | Author | MCP Practice |
-| Repository | https://github.com/mcp-practice/github-mcp |
+| Repository | https://github.com/NightDevilPT/mcp-servers/tree/main/apps/github-mcp |
 | Version | 1.0.0 |
 | Node Version | Compatible with Node.js 18+ |
 | License | ISC License |
