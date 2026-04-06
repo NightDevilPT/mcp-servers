@@ -2,13 +2,15 @@ const fs = require('fs');
 const path = require('path');
 
 // Configuration
-const projectsRoot = path.join(__dirname, '..', 'apps');
+const projectsRoot = path.join(__dirname, '..', 'apps', 'mongodb-mcp');
 const outputFile = path.join(__dirname, '..', 'source-code-dump.txt');
 
 // File extensions to include
 const includeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.txt', '.css', '.html'];
 // Directories to exclude
-const excludeDirs = ['node_modules', 'dist', '.git', 'build', 'coverage', '.vscode'];
+const excludeDirs = ['node_modules', 'dist', '.git', 'build', 'coverage', '.vscode', '.json'];
+// Files to exclude (by exact name)
+const excludeFiles = ['package-lock.json'];
 
 /**
  * Get all files recursively
@@ -27,6 +29,11 @@ function getAllFiles(dir, fileList = []) {
         getAllFiles(filePath, fileList);
       }
     } else {
+      // Check if file should be excluded by name
+      if (excludeFiles.includes(file)) {
+        return;
+      }
+      
       const ext = path.extname(file);
       if (includeExtensions.includes(ext)) {
         fileList.push(filePath);
@@ -73,6 +80,11 @@ function getFolderStructure(dir, prefix = '', structure = '') {
       const newPrefix = prefix + (isLastItem ? '    ' : '│   ');
       structure = getFolderStructure(filePath, newPrefix, structure);
     } else {
+      // Skip excluded files in folder structure display
+      if (excludeFiles.includes(file)) {
+        return;
+      }
+      
       const ext = path.extname(file);
       if (includeExtensions.includes(ext)) {
         structure += prefix + marker + '📄 ' + file + '\n';
