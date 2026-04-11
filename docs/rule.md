@@ -1,3 +1,7 @@
+Here is the complete MCP Development Guide with simple code examples, ready for you to copy and paste.
+
+---
+
 # MCP Development Guide
 
 ## Fundamental Rules
@@ -119,7 +123,7 @@ export const ResourceNameResource = {
 - Folder: kebab-case/ (e.g., database-stats/)
 - Export: PascalCaseResource (e.g., DatabaseStatsResource)
 - Name property: snake_case (e.g., database_stats)
-- URI format: scheme://resource/{param} (e.g., mongodb://database/{databaseName}/stats)
+- URI format: scheme://resource/{param}
 
 ### Resource Registration Hub
 
@@ -146,7 +150,6 @@ import { resources } from "./resources/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-// Initialize MCP server
 const server = new McpServer(
 	{
 		name: "your-mcp-server-name",
@@ -154,14 +157,13 @@ const server = new McpServer(
 	},
 	{
 		capabilities: {
-			tools: {}, // Enable tool functionality
-			resources: {}, // Enable resource functionality (optional)
-			elicitation: {}, // Enable user interaction features
+			tools: {},
+			resources: {},
+			elicitation: {},
 		},
 	},
 );
 
-// Register all tools
 for (const tool of tools) {
 	server.registerTool(
 		tool.name,
@@ -169,14 +171,12 @@ for (const tool of tools) {
 			description: tool.description,
 			inputSchema: tool.inputSchema,
 		},
-		// Execute receives (args, extra) - extra includes server reference
 		async (args, extra) => {
 			return tool.execute(args, server);
 		},
 	);
 }
 
-// Register all resources (if applicable)
 for (const resource of resources) {
 	server.registerResource(
 		resource.name,
@@ -185,14 +185,12 @@ for (const resource of resources) {
 			description: resource.description,
 			inputSchema: resource.inputSchema,
 		},
-		// Execute receives (args, extra) - extra includes server reference
 		async (args, extra) => {
 			return resource.execute(args, server);
 		},
 	);
 }
 
-// Launch server
 async function main() {
 	const transport = new StdioServerTransport();
 	await server.connect(transport);
@@ -207,34 +205,16 @@ main().catch((error) => {
 
 ### Server Configuration Essentials
 
-1. **Capabilities**: Enable `tools: {}`, `resources: {}`, and `elicitation: {}` based on requirements
-2. **Extra Parameter**: The registration callback receives `(args, extra)` where `extra` holds the server reference
-3. **Forwarding**: Pass `extra` (not `server`) to your execute function
-4. **Access Method**: Inside execute, use `extra.server.elicitInput()` for user prompts
+1. Enable capabilities: tools, resources, elicitation
+2. Register tools and resources by iterating through arrays
+3. Pass server reference to execute functions
+4. Access elicitInput via extra.server.elicitInput()
 
 ---
 
 ## Section 4: Human-in-the-Loop Using elicitInput
 
-When operations need user confirmation or extra input, leverage `extra.server.elicitInput` to pause and request interaction. The `extra` parameter provides server access.
-
-### Access Pattern
-
-```typescript
-execute: async (args, extra) => {
-	// Access elicitInput through extra.server
-	const result = await extra.server.elicitInput({
-		message: "Clear user prompt",
-		requestedSchema: {
-			/* JSON Schema definition */
-		},
-	});
-
-	// Process result
-};
-```
-
-### Basic Implementation for Tools
+### Basic elicitInput Pattern
 
 ```typescript
 execute: async (args, extra) => {
@@ -253,10 +233,8 @@ execute: async (args, extra) => {
 		},
 	});
 
-	// Process based on user action
 	if (result.action === "accept") {
 		const userInput = result.content.fieldName;
-		// Proceed with userInput
 		return {
 			content: [{ type: "text", text: `Received: ${userInput}` }],
 		};
@@ -266,7 +244,6 @@ execute: async (args, extra) => {
 			isError: false,
 		};
 	} else {
-		// "cancel"
 		return {
 			content: [{ type: "text", text: "Operation cancelled" }],
 			isError: false,
@@ -275,757 +252,361 @@ execute: async (args, extra) => {
 };
 ```
 
+---
+
+## Section 5: Dynamic Form Input Using FormGenerator
+
+### FormGenerator Utility Location
+`src/utils/form-generator.ts`
+
+### Pattern 1: Simple Form Input
+
+```typescript
+import { z } from "zod";
+import { FormGenerator } from "../utils/form-generator.js";
+
+export const CreateUserTool = {
+	name: "create_user",
+	description: "Create a new user",
+	inputSchema: {
+		apiUrl: z.string().describe("API endpoint"),
+	},
+	execute: async (args: { apiUrl: string }, extra: any) => {
+		const userSchema = {
+			type: "object",
+			properties: {
+				name: { type: "string", minLength: 2, maxLength: 50 },
+				email: { type: "string", format: "email" },
+				age: { type: "number", minimum: 18, maximum: 120 },
+			},
+			required: ["name", "email"],
+		};
+
+		const formSchema = FormGenerator.generateFormSchema(userSchema, {
+			includeTimestamps: false,
+			includeIds: false,
+		});
+
+		const result = await extra.server.elicitInput({
+			mode: "form",
+			message: "Please provide user details:",
+			requestedSchema: formSchema,
+		});
+
+		if (result.action !== "accept") {
+			return {
+				content: [{ type: "text", text: "User creation cancelled" }],
+				isError: false,
+			};
+		}
+
+		const userData = result.content;
+		// Save userData to database or API
+		
+		return {
+			content: [{ type: "text", text: `User ${userData.name} created` }],
+			_meta: { timestamp: new Date().toISOString() },
+		};
+	},
+};
+```
+
+### Pattern 2: Confirmation with Options
+
+```typescript
+import { z } from "zod";
+import { FormGenerator } from "../utils/form-generator.js";
+
+export const DeleteResourceTool = {
+	name: "delete_resource",
+	description: "Delete a resource with confirmation",
+	inputSchema: {
+		resourceId: z.string().describe("ID of resource to delete"),
+	},
+	execute: async (args: { resourceId: string }, extra: any) => {
+		const confirmationSchema = {
+			type: "object",
+			properties: {
+				action: {
+					type: "string",
+					enum: ["delete", "cancel"],
+					title: "Action",
+				},
+				reason: {
+					type: "string",
+					title: "Reason (optional)",
+				},
+			},
+			required: ["action"],
+		};
+
+		const formSchema = FormGenerator.generateFormSchema(confirmationSchema);
+
+		const result = await extra.server.elicitInput({
+			mode: "form",
+			message: `⚠️ Are you sure you want to delete resource ${args.resourceId}?`,
+			requestedSchema: formSchema,
+		});
+
+		if (result.action !== "accept" || result.content.action !== "delete") {
+			return {
+				content: [{ type: "text", text: "Deletion cancelled" }],
+				isError: false,
+			};
+		}
+
+		// Perform deletion
+		return {
+			content: [{ type: "text", text: "Resource deleted successfully" }],
+			_meta: { timestamp: new Date().toISOString() },
+		};
+	},
+};
+```
+
+### Pattern 3: Complex Nested Data
+
+```typescript
+import { z } from "zod";
+import { FormGenerator } from "../utils/form-generator.js";
+
+export const CreateBlogPostTool = {
+	name: "create_blog_post",
+	description: "Create a new blog post",
+	inputSchema: {},
+	execute: async (args: any, extra: any) => {
+		const blogSchema = {
+			type: "object",
+			properties: {
+				title: { type: "string", minLength: 5, maxLength: 200 },
+				content: { type: "string", minLength: 50 },
+				tags: {
+					type: "array",
+					items: { type: "string" },
+					minItems: 1,
+					maxItems: 5,
+				},
+				published: { type: "boolean", default: false },
+				author: {
+					type: "object",
+					properties: {
+						name: { type: "string" },
+						email: { type: "string", format: "email" },
+					},
+					required: ["name"],
+				},
+			},
+			required: ["title", "content", "author"],
+		};
+
+		const formSchema = FormGenerator.generateFormSchema(blogSchema, {
+			includeTimestamps: false,
+			includeIds: false,
+			fieldTransformations: {
+				title: (field) => ({
+					...field,
+					title: "Blog Title",
+					description: "Enter a catchy title (5-200 characters)",
+				}),
+			},
+		});
+
+		const result = await extra.server.elicitInput({
+			mode: "form",
+			message: "# Create New Blog Post\n\nPlease provide the post details:",
+			requestedSchema: formSchema,
+		});
+
+		if (result.action !== "accept") {
+			return {
+				content: [{ type: "text", text: "Blog creation cancelled" }],
+				isError: false,
+			};
+		}
+
+		const postData = result.content;
+		
+		return {
+			content: [{ type: "text", text: `Blog post "${postData.title}" created` }],
+			_meta: { timestamp: new Date().toISOString() },
+		};
+	},
+};
+```
+
+### Pattern 4: Dynamic Schema from External Source
+
+```typescript
+import { z } from "zod";
+import { FormGenerator } from "../utils/form-generator.js";
+
+export const CreateDynamicResourceTool = {
+	name: "create_dynamic_resource",
+	description: "Create resource using dynamic schema",
+	inputSchema: {
+		source: z.string().describe("Data source name"),
+		resourceType: z.string().describe("Type of resource to create"),
+	},
+	execute: async (args: { source: string; resourceType: string }, extra: any) => {
+		try {
+			// Fetch schema from external API
+			const schema = await fetchSchema(args.source, args.resourceType);
+			
+			const formSchema = FormGenerator.generateFormSchema(schema, {
+				includeTimestamps: false,
+				includeIds: false,
+			});
+
+			const result = await extra.server.elicitInput({
+				mode: "form",
+				message: `Create ${args.resourceType} from ${args.source}:`,
+				requestedSchema: formSchema,
+			});
+
+			if (result.action !== "accept") {
+				return {
+					content: [{ type: "text", text: "Operation cancelled" }],
+					isError: false,
+				};
+			}
+
+			// Create resource with result.content
+			return {
+				content: [{ type: "text", text: "Resource created successfully" }],
+				_meta: { timestamp: new Date().toISOString() },
+			};
+		} catch (error) {
+			// Fallback form
+			const fallbackSchema = {
+				type: "object",
+				properties: {
+					data: {
+						type: "string",
+						title: "Data JSON",
+						description: "Enter data as JSON",
+					},
+				},
+				required: ["data"],
+			};
+
+			const result = await extra.server.elicitInput({
+				mode: "form",
+				message: "No schema found. Please provide data:",
+				requestedSchema: fallbackSchema,
+			});
+
+			if (result.action !== "accept") {
+				return {
+					content: [{ type: "text", text: "Cancelled" }],
+					isError: false,
+				};
+			}
+
+			const data = JSON.parse(result.content.data);
+			return {
+				content: [{ type: "text", text: "Resource created with custom data" }],
+				_meta: { timestamp: new Date().toISOString() },
+			};
+		}
+	},
+};
+```
+
+### Pattern 5: Filter/Search Form
+
+```typescript
+import { z } from "zod";
+import { FormGenerator } from "../utils/form-generator.js";
+
+export const SearchUsersTool = {
+	name: "search_users",
+	description: "Search users with filters",
+	inputSchema: {},
+	execute: async (args: any, extra: any) => {
+		const filterSchema = {
+			type: "object",
+			properties: {
+				name: { type: "string", description: "User name (partial match)" },
+				minAge: { type: "number", minimum: 0, maximum: 150 },
+				maxAge: { type: "number", minimum: 0, maximum: 150 },
+				role: {
+					type: "string",
+					enum: ["admin", "user", "guest"],
+					description: "User role",
+				},
+				active: { type: "boolean", default: true },
+			},
+		};
+
+		const formSchema = FormGenerator.generateFormSchema(filterSchema, {
+			includeTimestamps: false,
+			includeIds: false,
+		});
+
+		const result = await extra.server.elicitInput({
+			mode: "form",
+			message: "Enter search filters:",
+			requestedSchema: formSchema,
+		});
+
+		if (result.action !== "accept") {
+			return {
+				content: [{ type: "text", text: "Search cancelled" }],
+				isError: false,
+			};
+		}
+
+		const filters = result.content;
+		// Build query from filters and search
+		const users = await searchUsers(filters);
+		
+		return {
+			content: [{ type: "text", text: JSON.stringify(users, null, 2) }],
+			_meta: { timestamp: new Date().toISOString() },
+		};
+	},
+};
+```
+
+---
+
+## Section 6: FormGenerator Rules and Patterns
+
+### Rules to Follow
+
+1. Always import FormGenerator from "../utils/form-generator.js"
+2. Define your data schema before calling elicitInput
+3. Always pass options { includeTimestamps: false, includeIds: false } for user input forms
+4. Use fieldTransformations for custom field overrides (passwords, special validation)
+5. Always check result.action === "accept" before processing data
+6. Handle decline and cancel actions with friendly messages and isError: false
+7. Use result.content directly - it's already validated against your schema
+
+### When to Use Each Pattern
+
+- **Pattern 1 (Simple Form)**: Creating resources, collecting user data, multi-field input
+- **Pattern 2 (Confirmation)**: Delete operations, destructive actions, approval workflows
+- **Pattern 3 (Nested Data)**: Complex objects with arrays, blog posts, user profiles with addresses
+- **Pattern 4 (Dynamic Schema)**: External APIs, database schemas, configurable forms
+- **Pattern 5 (Search/Filter)**: Query builders, search interfaces, report filters
+
+---
+
 ## Project Structure Reference
 
 ```
 src/
 ├── tools/
-│   ├── tool-name/
+│   ├── create-user/
 │   │   └── index.ts
-│   ├── another-tool/
+│   ├── delete-resource/
+│   │   └── index.ts
+│   ├── create-blog-post/
 │   │   └── index.ts
 │   └── index.ts
 ├── resources/
-│   ├── resource-name/
-│   │   └── index.ts
-│   ├── another-resource/
-│   │   └── index.ts
 │   └── index.ts
-├── types/
-│   └── github-types.ts
+├── utils/
+│   └── form-generator.ts
 └── server.ts
 ```
-
-### Implementation Examples
-
-#### Folder Layout
-
-```
-Directory structure:
-└── mongodb-mcp/
-    ├── docker-compose.yml
-    ├── package-lock.json
-    ├── package.json
-    ├── src/
-    │   ├── server.ts
-    │   └── tools/
-    │       ├── create-collection/
-    │       │   └── index.ts
-    │       └── index.ts
-    └── tsconfig.json
-```
-
-##### src/server.ts Implementation
-
-```ts
-import { tools } from "./tools/index.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-
-// Initialize MCP server instance
-const server = new McpServer(
-	{
-		name: "mongodb-mcp-server",
-		version: "1.0.0",
-	},
-	{
-		capabilities: {
-			tools: {},
-		},
-	},
-);
-
-// Register all available tools
-for (const tool of tools) {
-	server.registerTool(
-		tool.name,
-		{
-			description: tool.description,
-			inputSchema: tool.inputSchema,
-		},
-		// Execute function receives (args, extra) - extra contains server reference
-		async (args, extra) => {
-			// Forward server instance to tool's execute function
-			return tool.execute(args, server);
-		},
-	);
-}
-
-// Launch server
-async function main() {
-	const transport = new StdioServerTransport();
-	await server.connect(transport);
-	console.error("MongoDB MCP server running on stdio");
-}
-
-main().catch((error) => {
-	console.error("Server error:", error);
-	process.exit(1);
-});
-```
-
-##### src/tools/index.ts Implementation
-
-```ts
-import { createCollectionTool } from "./create-collection/index.js";
-
-export const tools = [createCollectionTool];
-```
-
-##### src/tools/create-collection/index.ts Implementation
-
-```ts
-// src/tools/create-collection/index.ts
-import { z } from "zod";
-import { MongoClient } from "mongodb";
-
-export const CreateCollectionTool = {
-	name: "create_collection",
-	description:
-		"Create a new collection in MongoDB database with user confirmation",
-	inputSchema: {
-		uri: z
-			.string()
-			.describe(
-				"URI of the MongoDB database where collection will be created",
-			),
-		database: z
-			.string()
-			.describe("Name of the database where collection will be created"),
-		collection: z.string().describe("Name of the collection to create"),
-		options: z
-			.string()
-			.optional()
-			.describe(
-				'Optional JSON string with collection options, example: {"capped": true, "size": 100000, "max": 5000}',
-			),
-	},
-	// The 'extra' parameter contains the server instance
-	execute: async (
-		args: {
-			uri: string;
-			database: string;
-			collection: string;
-			options?: string;
-		},
-		extra: any, // Contains { server: McpServer }
-	) => {
-		let client: MongoClient | null = null;
-
-		try {
-			// Parse options if supplied
-			let collectionOptions = {};
-			if (args.options) {
-				try {
-					collectionOptions = JSON.parse(args.options);
-				} catch (parseError) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `Error: Invalid JSON in options parameter. ${parseError}`,
-							},
-						],
-						isError: true,
-					};
-				}
-			}
-
-			// Access elicitInput via extra.server.server
-			// Structure: extra.server.server.elicitInput
-			const confirmationResult = await extra.server.elicitInput({
-				message: `⚠️ You are about to create a new collection:\n\nDatabase: ${args.database}\nCollection: ${args.collection}\n${args.options ? `Options: ${JSON.stringify(collectionOptions, null, 2)}` : "No additional options"}\n\nDo you want to proceed?`,
-				requestedSchema: {
-					type: "object",
-					properties: {
-						action: {
-							type: "string",
-							enum: ["create", "cancel"],
-							title: "Action",
-							description:
-								"Choose 'create' to proceed or 'cancel' to abort",
-						},
-						reason: {
-							type: "string",
-							title: "Reason (optional)",
-							description:
-								"Why are you creating this collection?",
-						},
-					},
-					required: ["action"],
-				},
-			});
-
-			// Process user decision based on reference pattern
-			if (
-				confirmationResult.action !== "accept" ||
-				confirmationResult.content?.action !== "create"
-			) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Collection creation cancelled by user.${confirmationResult.content?.reason ? ` Reason: ${confirmationResult.content.reason}` : ""}`,
-						},
-					],
-					isError: false,
-				};
-			}
-
-			// Connect to MongoDB
-			client = new MongoClient(args.uri);
-			await client.connect();
-
-			const db = client.db(args.database);
-
-			// Execute collection creation
-			await db.createCollection(args.collection, collectionOptions);
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: JSON.stringify(
-							{
-								success: true,
-								database: args.database,
-								collection: args.collection,
-								message: `Collection '${args.collection}' created successfully in database '${args.database}'`,
-								options: collectionOptions,
-								reason:
-									confirmationResult.content?.reason ||
-									"No reason provided",
-							},
-							null,
-							2,
-						),
-					},
-				],
-				_meta: {
-					timestamp: new Date().toISOString(),
-					database: args.database,
-					collection: args.collection,
-				},
-			};
-		} catch (error: any) {
-			// Handle MongoDB-specific errors
-			if (error.code === 48) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Error: Collection '${args.collection}' already exists in database '${args.database}'`,
-						},
-					],
-					isError: true,
-				};
-			}
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Error creating collection: ${error.message}`,
-					},
-				],
-				isError: true,
-			};
-		} finally {
-			// Ensure connection cleanup
-			if (client) {
-				await client.close();
-			}
-		}
-	},
-};
-```
----
-
-## Section 5: Dynamic Form Input Generation
-
-When creating tools that require user input, leverage dynamic form generation based on schema validation rules. This provides a better user experience than asking for raw JSON strings.
-
-### Form Input Types and Constraints
-
-#### Basic Primitive Types
-
-**String Fields**
-```typescript
-{
-  type: "string",
-  title: "Display Name",
-  description: "Field description",
-  minLength: 3,        // Minimum length validation
-  maxLength: 50,       // Maximum length validation
-  pattern: "^[A-Za-z]+$", // Regex pattern validation
-  format: "email",     // Special formats: email, uri, date, date-time
-  default: "user@example.com" // Default value
-}
-```
-
-**Number Fields**
-```typescript
-{
-  type: "number",      // or "integer" for whole numbers
-  title: "Age",
-  description: "User age",
-  minimum: 0,          // Minimum value
-  maximum: 150,        // Maximum value
-  default: 25          // Default value
-}
-```
-
-**Boolean Fields**
-```typescript
-{
-  type: "boolean",
-  title: "Active Status",
-  description: "Whether the user is active",
-  default: false       // Default value
-}
-```
-
-#### Enum Fields (Single Selection)
-
-**Without Titles**
-```typescript
-{
-  type: "string",
-  title: "Color Selection",
-  description: "Choose your favorite color",
-  enum: ["Red", "Green", "Blue"],
-  default: "Red"
-}
-```
-
-**With Titles**
-```typescript
-{
-  type: "string",
-  title: "Color Selection",
-  description: "Choose your favorite color",
-  oneOf: [
-    { const: "#FF0000", title: "Red" },
-    { const: "#00FF00", title: "Green" },
-    { const: "#0000FF", title: "Blue" }
-  ],
-  default: "#FF0000"
-}
-```
-
-#### Array Fields
-
-**Array of Primitives**
-```typescript
-{
-  type: "array",
-  title: "Tags",
-  description: "Add tags for the item",
-  items: {
-    type: "string",
-    enum: ["urgent", "important", "review"] // Optional enum for array items
-  },
-  minItems: 1,        // Minimum number of items
-  maxItems: 5,        // Maximum number of items
-  default: ["urgent"] // Default array value
-}
-```
-
-**Array of Objects**
-```typescript
-{
-  type: "array",
-  title: "Addresses",
-  description: "List of addresses",
-  items: {
-    type: "object",
-    properties: {
-      street: { type: "string", description: "Street address" },
-      city: { type: "string", description: "City name" },
-      zipCode: { type: "string", pattern: "^\\d{5}$", description: "5-digit zip code" }
-    },
-    required: ["street", "city"]
-  },
-  minItems: 1,
-  maxItems: 3
-}
-```
-
-#### Object Fields
-
-**Simple Object**
-```typescript
-{
-  type: "object",
-  title: "Contact Information",
-  description: "User contact details",
-  properties: {
-    email: { 
-      type: "string", 
-      format: "email", 
-      description: "Email address" 
-    },
-    phone: { 
-      type: "string", 
-      pattern: "^\\d{10}$", 
-      description: "10-digit phone number" 
-    },
-    preferred: {
-      type: "boolean",
-      description: "Preferred contact method",
-      default: false
-    }
-  },
-  required: ["email"] // Required properties
-}
-```
-
-**Nested Object**
-```typescript
-{
-  type: "object",
-  title: "User Profile",
-  description: "Complete user profile",
-  properties: {
-    personal: {
-      type: "object",
-      properties: {
-        firstName: { type: "string", description: "First name" },
-        lastName: { type: "string", description: "Last name" },
-        age: { type: "number", minimum: 0, maximum: 150 }
-      },
-      required: ["firstName", "lastName"]
-    },
-    preferences: {
-      type: "object",
-      properties: {
-        theme: { 
-          type: "string", 
-          enum: ["light", "dark", "auto"],
-          default: "auto"
-        },
-        notifications: {
-          type: "boolean",
-          default: true
-        }
-      }
-    }
-  },
-  required: ["personal"]
-}
-```
-
-### Universal Type Mapping
-
-When working with different data sources, map types to form types:
-
-| Source Type | Form Type | Constraints | Example |
-|------------|-----------|-------------|---------|
-| `string/text` | string | minLength, maxLength, pattern, enum, format | Email, name, description |
-| `integer/number/decimal` | number | minimum, maximum, enum | Age, price, quantity |
-| `boolean/flag` | boolean | - | Active status, flags |
-| `date/datetime/timestamp` | string | format: "date-time" | Created date, timestamps |
-| `uuid/id` | string | pattern: "^[0-9a-fA-F]{24}$" or UUID pattern | Document IDs, unique identifiers |
-| `array/list` | array | minItems, maxItems, items schema | Tags, lists, collections |
-| `object/dict` | object | properties, required | Nested data structures |
-| `null/optional` | string | description | Optional/nullable fields |
-| `binary/data` | string | description | Binary data (base64) |
-| `regex/pattern` | string | pattern: "^/.*/$" | Regular expressions |
-| `code/script` | string | description | Code snippets, scripts |
-
-### Generic Form Schema Generation Pattern
-
-```typescript
-// Generate form schema from any data schema
-function generateFormSchema(dataSchema: any): {
-  properties: Record<string, any>;
-  required: string[];
-} {
-  const properties: Record<string, any> = {};
-  const required: string[] = dataSchema.required || [];
-
-  for (const [fieldName, field] of Object.entries(dataSchema.properties)) {
-    properties[fieldName] = {
-      type: mapDataTypeToFormType(field.type),
-      title: formatFieldName(fieldName),
-      description: field.description || `${fieldName} field`,
-    };
-
-    // Add constraints based on field type
-    if (field.type === 'string') {
-      if (field.minLength) properties[fieldName].minLength = field.minLength;
-      if (field.maxLength) properties[fieldName].maxLength = field.maxLength;
-      if (field.pattern) properties[fieldName].pattern = field.pattern;
-      if (field.enum) properties[fieldName].enum = field.enum;
-      if (field.format) properties[fieldName].format = field.format;
-    }
-
-    if (['integer', 'number', 'decimal', 'float'].includes(field.type)) {
-      if (field.minimum !== undefined) properties[fieldName].minimum = field.minimum;
-      if (field.maximum !== undefined) properties[fieldName].maximum = field.maximum;
-      if (field.enum) properties[fieldName].enum = field.enum;
-      properties[fieldName].type = 'number';
-    }
-
-    if (field.type === 'boolean') {
-      properties[fieldName].type = 'boolean';
-    }
-
-    if (['date', 'datetime', 'timestamp'].includes(field.type)) {
-      properties[fieldName].type = 'string';
-      properties[fieldName].format = 'date-time';
-    }
-
-    if (field.type === 'uuid') {
-      properties[fieldName].type = 'string';
-      properties[fieldName].pattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
-    }
-
-    if (field.type === 'array') {
-      properties[fieldName].type = 'array';
-      if (field.items) {
-        properties[fieldName].items = convertItemsSchema(field.items);
-      }
-      if (field.minItems !== undefined) properties[fieldName].minItems = field.minItems;
-      if (field.maxItems !== undefined) properties[fieldName].maxItems = field.maxItems;
-    }
-
-    if (field.type === 'object') {
-      properties[fieldName].type = 'object';
-      if (field.properties) {
-        const nestedSchema = generateFormSchema(field);
-        properties[fieldName].properties = nestedSchema.properties;
-        properties[fieldName].required = nestedSchema.required;
-      }
-    }
-  }
-
-  return { properties, required };
-}
-
-function mapDataTypeToFormType(dataType: string): string {
-  switch (dataType.toLowerCase()) {
-    case 'string':
-    case 'text':
-    case 'uuid':
-    case 'id':
-    case 'date':
-    case 'datetime':
-    case 'timestamp':
-    case 'null':
-    case 'binary':
-    case 'regex':
-    case 'code':
-    case 'script':
-      return 'string';
-    case 'integer':
-    case 'number':
-    case 'decimal':
-    case 'float':
-    case 'double':
-      return 'number';
-    case 'boolean':
-    case 'bool':
-    case 'flag':
-      return 'boolean';
-    case 'array':
-    case 'list':
-    case 'collection':
-      return 'array';
-    case 'object':
-    case 'dict':
-    case 'map':
-      return 'object';
-    default:
-      return 'string';
-  }
-}
-```
-
-### Complete Form Implementation Example
-
-```typescript
-// Tool with dynamic form generation
-execute: async (args, extra) => {
-  // Fetch schema from any data source
-  const schema = await getDataSchema(args.source, args.resource);
-  
-  let formSchema: any;
-  let message: string;
-
-  if (schema) {
-    // Generate dynamic form from schema
-    const { properties, required } = generateFormSchema(schema);
-    formSchema = {
-      type: "object",
-      properties,
-      required,
-    };
-
-    message = `# Create ${args.resource}\n\n`;
-    message += `Source: ${args.source}\n`;
-    message += `Resource: ${args.resource}\n`;
-    message += `Validation: Schema validation enabled\n\n`;
-    message += generateFieldSummary(schema);
-  } else {
-    // Fallback for resources without schema
-    formSchema = {
-      type: "object",
-      properties: {
-        data: {
-          type: "string",
-          title: "Data JSON",
-          description: "The data to create (in JSON format)",
-        },
-      },
-      required: ["data"],
-    };
-
-    message = `# Create ${args.resource}\n\n`;
-    message += `No schema validation - any data structure allowed.\n\n`;
-  }
-
-  // Request user input with dynamic form
-  const result = await extra.server.elicitInput({
-    mode: "form",
-    message: `${message}Please fill in the data fields:`,
-    requestedSchema: formSchema,
-  });
-
-  if (result.action !== "accept") {
-    return {
-      content: [{ type: "text", text: "Operation cancelled by user." }],
-      isError: false,
-    };
-  }
-
-  // Process form data
-  const data = schema ? result.content : JSON.parse(result.content.data);
-  
-  // Create resource...
-  return { content: [{ type: "text", text: "Resource created successfully" }] };
-}
-```
-
-### Form Field Best Practices
-
-1. **Clear Titles**: Use human-readable titles (e.g., "Email Address" vs "email")
-2. **Helpful Descriptions**: Explain what each field is for
-3. **Appropriate Defaults**: Provide sensible default values when possible
-4. **Validation Constraints**: Use minLength, maxLength, minimum, maximum for validation
-5. **Format Validation**: Use format for email, date, URI fields
-6. **Enum Selections**: Use enums for limited choice fields
-7. **Required Fields**: Clearly mark required fields in the schema
-8. **Optional Fields**: Make truly optional fields not required
-9. **Nested Objects**: Use object type for complex nested data
-10. **Arrays**: Use array type with proper item validation
-
-### Error Handling for Forms
-
-```typescript
-// Validate form data
-if (result.action === "accept") {
-  try {
-    const data = result.content;
-    
-    // Additional validation if needed
-    if (schema && !validateDataAgainstSchema(data, schema)) {
-      return {
-        content: [{ type: "text", text: "Data validation failed" }],
-        isError: true,
-      };
-    }
-    
-    // Proceed with resource creation...
-  } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error processing form data: ${error.message}` }],
-      isError: true,
-    };
-  }
-}
-```
-
-### Use Cases and Examples
-
-#### REST API Form
-```typescript
-// For creating a user via REST API
-const userSchema = {
-  type: "object",
-  properties: {
-    name: { type: "string", minLength: 2, maxLength: 50 },
-    email: { type: "string", format: "email" },
-    age: { type: "number", minimum: 18, maximum: 120 },
-    roles: { 
-      type: "array", 
-      items: { type: "string", enum: ["admin", "user", "guest"] },
-      minItems: 1 
-    },
-    profile: {
-      type: "object",
-      properties: {
-        bio: { type: "string", maxLength: 500 },
-        avatar: { type: "string", format: "uri" }
-      }
-    }
-  },
-  required: ["name", "email"]
-};
-```
-
-#### Database Configuration Form
-```typescript
-// For database configuration
-const configSchema = {
-  type: "object",
-  properties: {
-    host: { type: "string", description: "Database host" },
-    port: { type: "number", minimum: 1, maximum: 65535, default: 5432 },
-    database: { type: "string", description: "Database name" },
-    ssl: { type: "boolean", default: true },
-    poolSize: { type: "number", minimum: 1, maximum: 100, default: 10 },
-    options: {
-      type: "object",
-      properties: {
-        timeout: { type: "number", minimum: 1000, default: 5000 },
-        retries: { type: "number", minimum: 0, maximum: 5, default: 3 }
-      }
-    }
-  },
-  required: ["host", "database"]
-};
-```
-
-#### File Upload Metadata Form
-```typescript
-// For file upload metadata
-const fileSchema = {
-  type: "object",
-  properties: {
-    filename: { type: "string", description: "Original filename" },
-    contentType: { 
-      type: "string", 
-      enum: ["image/jpeg", "image/png", "application/pdf", "text/plain"],
-      description: "MIME type"
-    },
-    size: { type: "number", minimum: 0, description: "File size in bytes" },
-    tags: { 
-      type: "array", 
-      items: { type: "string" },
-      description: "File tags"
-    },
-    metadata: {
-      type: "object",
-      properties: {
-        author: { type: "string" },
-        description: { type: "string", maxLength: 1000 },
-        category: { type: "string", enum: ["document", "image", "video", "audio"] }
-      }
-    }
-  },
-  required: ["filename", "contentType"]
-};
-```
-
-This generic approach allows you to create forms for any data source, whether it's REST APIs, databases, file systems, or any other structured data source.

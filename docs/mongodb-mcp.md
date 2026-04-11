@@ -1,86 +1,74 @@
-Here's the updated MongoDB MCP documentation with Database Administration marked as **COMPLETED**:
+Here's the corrected MongoDB MCP Server documentation:
 
 ---
 
-# MongoDB MCP Server – Tasks & Design Considerations
+# MongoDB MCP Server – Complete Implementation Status
 
-Based on your concept for the MongoDB MCP and the provided guidelines, the following outlines what can be developed, along with key points requiring discussion or modification prior to implementation.
-
-## 1. Capabilities of a MongoDB MCP Server
-
-The server can provide tools for performing actions and resources for exposing data. Typical MongoDB operations include:
-
-### 🔧 Tools (Actions)
-
-| Category | Example Tools | Status |
-|----------|----------------|--------|
-| **CRUD** | `insert_one`, `insert_many`, `find_one`, `find_many`, `update_one`, `update_many`, `replace_one`, `delete_one`, `delete_many` | ⏳ Pending |
-| **Aggregation** | `aggregate` (with pipeline passed as a JSON string) | ⏳ Pending |
-| **Index management** | `create_index`, `drop_index`, `list_indexes` | ⏳ Pending |
-| **Database administration** | `list_collections`, `create_collection`, `drop_collection`, `rename_collection`, `collection_stats` | ✅ **COMPLETED** |
-| **Bulk operations** | `bulk_write` | ⏳ Pending |
-| **Session / transactions** (if replica set enabled) | `start_transaction`, `commit_transaction`, `abort_transaction` | ⏳ Pending |
+## Overview
+The MongoDB MCP Server provides tools for interacting with MongoDB databases through the Model Context Protocol. All tools follow MCP guidelines with Zod validation, uniform responses, and error handling.
 
 ---
 
-### ✅ Completed Tools (Database Administration)
+## ✅ COMPLETED TOOLS
 
-The following database administration tools have been implemented and are fully functional:
+### Database Administration Tools
 
-| Tool | Description | File Location |
-|------|-------------|----------------|
-| `list_collections` | List all collections in a MongoDB database | `src/tools/list-collections/index.ts` |
-| `create_collection` | Create a new collection with JSON schema validation | `src/tools/create-collection/index.ts` |
-| `drop_collection` | Permanently delete a collection (with user confirmation) | `src/tools/drop-collection/index.ts` |
-| `rename_collection` | Rename an existing collection (with user confirmation) | `src/tools/rename-collection/index.ts` |
-| `collection_stats` | Get detailed statistics for a MongoDB collection | `src/tools/collection-stats/index.ts` |
-
-**Note**: All completed tools follow MCP guidelines including:
-- Zod runtime type validation
-- Uniform response structure
-- Error handling without throwing exceptions
-- User confirmation via `elicitInput` for dangerous operations
-- Proper connection cleanup in `finally` blocks
+| Tool | Description | Category | Status |
+|------|-------------|----------|--------|
+| `create_database` | Create a new database in MongoDB | Database Administration | ✅ COMPLETED |
+| `list_databases` | List all databases in MongoDB instance | Database Administration | ✅ COMPLETED |
 
 ---
 
-### ⏳ Pending Tools by Category
+## ⏳ PENDING TOOLS
 
-#### 📝 CRUD Operations (Next Priority)
+### Database Administration (Remaining)
 
 | Tool | Description | Priority |
 |------|-------------|----------|
-| `insert_one` | Insert a single document into a collection | High |
-| `insert_many` | Insert multiple documents into a collection | High |
-| `find_one` | Find a single document matching a filter | High |
-| `find_many` | Find multiple documents with optional pagination | High |
-| `update_one` | Update a single document matching a filter | Medium |
-| `update_many` | Update multiple documents matching a filter | Medium |
-| `replace_one` | Replace a single document matching a filter | Medium |
-| `delete_one` | Delete a single document matching a filter (with confirmation) | Medium |
-| `delete_many` | Delete multiple documents matching a filter (with confirmation) | Medium |
+| `drop_database` | Delete a database (with user confirmation) | High |
+| `database_stats` | Get statistics for a specific database | Medium |
+| `list_collections` | List all collections in a database | High |
+| `create_collection` | Create a new collection with schema validation | High |
+| `drop_collection` | Delete a collection (with user confirmation) | High |
+| `rename_collection` | Rename an existing collection | Medium |
+| `collection_stats` | Get statistics for a specific collection | Medium |
 
-#### 📊 Aggregation
+### CRUD Operations (9 tools)
 
 | Tool | Description | Priority |
 |------|-------------|----------|
-| `aggregate` | Execute an aggregation pipeline (JSON string input) | Medium |
+| `insert_one` | Insert a single document | High |
+| `insert_many` | Insert multiple documents | High |
+| `find_one` | Find a single document | High |
+| `find_many` | Find multiple documents with pagination | High |
+| `update_one` | Update a single document | Medium |
+| `update_many` | Update multiple documents | Medium |
+| `replace_one` | Replace a single document | Medium |
+| `delete_one` | Delete a single document (with confirmation) | Medium |
+| `delete_many` | Delete multiple documents (with confirmation) | Medium |
 
-#### 🔍 Index Management
+### Aggregation (1 tool)
+
+| Tool | Description | Priority |
+|------|-------------|----------|
+| `aggregate` | Execute aggregation pipeline | Medium |
+
+### Index Management (3 tools)
 
 | Tool | Description | Priority |
 |------|-------------|----------|
 | `create_index` | Create an index on a collection | Medium |
-| `drop_index` | Drop an index from a collection (with confirmation) | Low |
+| `drop_index` | Drop an index from a collection | Low |
 | `list_indexes` | List all indexes on a collection | Low |
 
-#### 📦 Bulk Operations
+### Bulk Operations (1 tool)
 
 | Tool | Description | Priority |
 |------|-------------|----------|
 | `bulk_write` | Execute bulk write operations | Low |
 
-#### 🔄 Transactions (Replica Set Only)
+### Transactions (3 tools) - Requires Replica Set
 
 | Tool | Description | Priority |
 |------|-------------|----------|
@@ -90,41 +78,46 @@ The following database administration tools have been implemented and are fully 
 
 ---
 
-## 2. Implementation Status Summary
+## Implementation Status Summary
 
 | Category | Total Tools | Completed | Remaining |
 |----------|-------------|-----------|-----------|
-| Database Administration | 5 | 5 | 0 |
+| Database Administration | 9 | 2 | 7 |
 | CRUD Operations | 9 | 0 | 9 |
 | Aggregation | 1 | 0 | 1 |
 | Index Management | 3 | 0 | 3 |
 | Bulk Operations | 1 | 0 | 1 |
 | Transactions | 3 | 0 | 3 |
-| **TOTAL** | **22** | **5** | **17** |
+| **TOTAL** | **26** | **2** | **24** |
 
 ---
 
-## 3. Next Steps
+## Completed Tools Details
 
-The immediate focus should be on implementing **CRUD operations**:
+### 1. `create_database`
+- **Category**: Database Administration
+- **Description**: Create a new database in MongoDB
+- **Input**: `databaseName` (string)
+- **Validation**: Only letters, numbers, underscores, hyphens
+- **Process**: Tests connection, creates database with temporary collection, removes it
+- **Returns**: Database name and creation status
 
-1. ✅ Database Administration (COMPLETED)
-2. 🔄 **CRUD Operations** ← NEXT
-3. ⏳ Aggregation
-4. ⏳ Index Management
-5. ⏳ Bulk Operations
-6. ⏳ Transactions (optional, requires replica set)
-
----
-
-## 4. Technical Notes
-
-- All tools use `process.env.MONGODB_URI` for database connection
-- Each tool manages its own connection lifecycle
-- `elicitInput` is used for destructive operations (delete, drop)
-- Schema validation support exists for `create_collection`
-- Response format includes `_meta.timestamp` and operation-specific metadata
+### 2. `list_databases`
+- **Category**: Database Administration
+- **Description**: List all databases in MongoDB instance
+- **Input**: `includeSize` (boolean, default false), `includeSystemDatabases` (boolean, default false)
+- **Returns**: Array of databases with names, sizes (optional), and empty status
+- **Note**: System databases (admin, config, local) are excluded by default
 
 ---
 
-Do you want me to proceed with the **CRUD operations** tool specifications and implementation?
+## Next Steps
+
+Priority order for implementation:
+1. ✅ Database Administration (create_database, list_databases) - COMPLETED
+2. 🔄 Remaining Database Administration tools (list_collections, create_collection, etc.)
+3. 🔄 CRUD Operations
+4. 🔄 Aggregation
+5. 🔄 Index Management
+6. 🔄 Bulk Operations
+7. 🔄 Transactions (optional)
