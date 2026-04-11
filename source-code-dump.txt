@@ -1,0 +1,946 @@
+====================================================================================================
+🚀 UNILOGGER SOURCE CODE DUMP
+====================================================================================================
+📅 Generated: 6/4/2026, 9:53:14 pm
+📁 Root: src/
+📊 Total Files: 9
+====================================================================================================
+
+📑 TABLE OF CONTENTS
+--------------------------------------------------
+1. 📄 apps\mongodb-mcp\package.json
+2. 📄 apps\mongodb-mcp\src\server.ts
+3. 📄 apps\mongodb-mcp\src\tools\collection-stats\index.ts
+4. 📄 apps\mongodb-mcp\src\tools\create-collection\index.ts
+5. 📄 apps\mongodb-mcp\src\tools\drop-collection\index.ts
+6. 📄 apps\mongodb-mcp\src\tools\index.ts
+7. 📄 apps\mongodb-mcp\src\tools\list-collections\index.ts
+8. 📄 apps\mongodb-mcp\src\tools\rename-collection\index.ts
+9. 📄 apps\mongodb-mcp\tsconfig.json
+
+====================================================================================================
+
+📁 FOLDER STRUCTURE
+--------------------------------------------------
+src/
+    ├── 📄 package.json
+    ├── 📁 src
+    │   ├── 📄 server.ts
+    │   └── 📁 tools
+    │       ├── 📁 collection-stats
+    │       │   └── 📄 index.ts
+    │       ├── 📁 create-collection
+    │       │   └── 📄 index.ts
+    │       ├── 📁 drop-collection
+    │       │   └── 📄 index.ts
+    │       ├── 📄 index.ts
+    │       ├── 📁 list-collections
+    │       │   └── 📄 index.ts
+    │       └── 📁 rename-collection
+    │           └── 📄 index.ts
+    └── 📄 tsconfig.json
+
+====================================================================================================
+
+📄 FILE CONTENTS
+--------------------------------------------------
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\package.json
+====================================================================================================
+
+{
+  "name": "github-mcp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "inspect": "npx @modelcontextprotocol/inspector"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "mongodb": "^7.1.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  }
+}
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\server.ts
+====================================================================================================
+
+import { tools } from "./tools/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+// Create MCP server instance
+const server = new McpServer(
+  {
+    name: "mongodb-mcp-server",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
+
+// Register all tools
+for (const tool of tools) {
+  server.registerTool(
+    tool.name,
+    {
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    },
+    // IMPORTANT: The execute function receives (args, extra)
+    // where extra contains the server reference
+    async (args: any, extra: any) => {
+      // Pass the server instance to your tool's execute function
+      return tool.execute(args, server);
+    }
+  );
+}
+
+// Start the server
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("MongoDB MCP server running on stdio");
+}
+
+main().catch((error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\collection-stats\index.ts
+====================================================================================================
+
+// src/tools/collection-stats/index.ts
+import { z } from "zod";
+import { MongoClient } from "mongodb";
+
+export const CollectionStatsTool = {
+	name: "collection_stats",
+	description: "[Database administration] : Get detailed statistics for a MongoDB collection",
+	inputSchema: {
+		uri: z
+			.string()
+			.describe(
+				"URI of the MongoDB database to connect to",
+			),
+		database: z
+			.string()
+			.describe("Name of the database containing the collection"),
+		collection: z.string().describe("Name of the collection to get statistics for"),
+	},
+	execute: async (
+		args: {
+			uri: string;
+			database: string;
+			collection: string;
+		},
+		extra: any, // Contains { server: McpServer }
+	) => {
+		let client: MongoClient | null = null;
+
+		try {
+			// Connect to MongoDB
+			client = new MongoClient(args.uri);
+			await client.connect();
+
+			const db = client.db(args.database);
+
+			// Check if collection exists
+			const collections = await db.listCollections({ name: args.collection }).toArray();
+			if (collections.length === 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' does not exist in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Get collection statistics using admin command
+			const admin = client.db().admin();
+			const stats = await admin.command({
+				collStats: args.collection,
+				scale: 1
+			});
+
+			// Get document count for verification
+			const docCount = await db.collection(args.collection).countDocuments();
+
+			// Get index information
+			const indexes = await db.collection(args.collection).listIndexes().toArray();
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								success: true,
+								database: args.database,
+								collection: args.collection,
+								stats: {
+									// Basic collection info
+									ns: stats.ns,
+									size: stats.size,
+									count: stats.count,
+									avgObjSize: stats.avgObjSize,
+									storageSize: stats.storageSize,
+									totalIndexSize: stats.totalIndexSize,
+									
+									// Document information
+									documentCount: docCount,
+									
+									// Index information
+									indexCount: indexes.length,
+									indexes: indexes.map(index => ({
+										name: index.name,
+										keys: index.key,
+										unique: index.unique || false,
+										sparse: index.sparse || false,
+									})),
+									
+									// Additional stats if available
+									capped: stats.capped || false,
+									wiredTiger: stats.wiredTiger || {},
+									
+									// Timestamps
+									created: stats.createTime ? new Date(stats.createTime * 1000).toISOString() : null,
+								},
+								message: `Statistics retrieved successfully for collection '${args.collection}' in database '${args.database}'`,
+							},
+							null,
+							2,
+						),
+					},
+				],
+				_meta: {
+					timestamp: new Date().toISOString(),
+					database: args.database,
+					collection: args.collection,
+					documentCount: docCount,
+					indexCount: indexes.length,
+				},
+			};
+		} catch (error: any) {
+			// Handle MongoDB connection errors
+			if (error.code === 18) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Authentication failed for database '${args.database}'. Check URI credentials.`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Handle database not found errors
+			if (error.code === 26) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Database '${args.database}' not found.`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Error getting collection statistics: ${error.message}`,
+					},
+				],
+				isError: true,
+			};
+		} finally {
+			// Always close the connection
+			if (client) {
+				await client.close();
+			}
+		}
+	},
+};
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\create-collection\index.ts
+====================================================================================================
+
+// src/tools/create-collection/index.ts
+import { z } from "zod";
+import { MongoClient } from "mongodb";
+
+export const CreateCollectionTool = {
+	name: "create_collection",
+	description:
+		"[Database administration] : Create a new collection in MongoDB database with user confirmation",
+	inputSchema: {
+		uri: z
+			.string()
+			.describe(
+				"URI of the MongoDB database where collection will be created",
+			),
+		database: z
+			.string()
+			.describe("Name of the database where collection will be created"),
+		collection: z.string().describe("Name of the collection to create"),
+		options: z
+			.string()
+			.optional()
+			.describe(
+				'Optional JSON string with collection options, example: {"capped": true, "size": 100000, "max": 5000}',
+			),
+	},
+	// IMPORTANT: The second parameter 'extra' contains the server instance
+	execute: async (
+		args: {
+			uri: string;
+			database: string;
+			collection: string;
+			options?: string;
+		},
+		extra: any, // This contains { server: McpServer }
+	) => {
+		let client: MongoClient | null = null;
+
+		try {
+			// Parse options if provided
+			let collectionOptions = {};
+			if (args.options) {
+				try {
+					collectionOptions = JSON.parse(args.options);
+				} catch (parseError) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Error: Invalid JSON in options parameter. ${parseError}`,
+							},
+						],
+						isError: true,
+					};
+				}
+			}
+
+			// CORRECT WAY: Access elicitInput via extra.server.server
+			// The structure is: extra.server.server.elicitInput
+			const confirmationResult = await extra.server.elicitInput({
+				message: `⚠️ You are about to create a new collection:\n\nDatabase: ${args.database}\nCollection: ${args.collection}\n${args.options ? `Options: ${JSON.stringify(collectionOptions, null, 2)}` : "No additional options"}\n\nDo you want to proceed?`,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						action: {
+							type: "string",
+							enum: ["create", "cancel"],
+							title: "Action",
+							description:
+								"Choose 'create' to proceed or 'cancel' to abort",
+						},
+						reason: {
+							type: "string",
+							title: "Reason (optional)",
+							description:
+								"Why are you creating this collection?",
+						},
+					},
+					required: ["action"],
+				},
+			});
+
+			// Handle user's decision - Based on the reference code pattern
+			if (
+				confirmationResult.action !== "accept" ||
+				confirmationResult.content?.action !== "create"
+			) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Collection creation cancelled by user.${confirmationResult.content?.reason ? ` Reason: ${confirmationResult.content.reason}` : ""}`,
+						},
+					],
+					isError: false,
+				};
+			}
+
+			// Connect to MongoDB
+			client = new MongoClient(args.uri);
+			await client.connect();
+
+			const db = client.db(args.database);
+
+			// Create the collection
+			await db.createCollection(args.collection, collectionOptions);
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								success: true,
+								database: args.database,
+								collection: args.collection,
+								message: `Collection '${args.collection}' created successfully in database '${args.database}'`,
+								options: collectionOptions,
+								reason:
+									confirmationResult.content?.reason ||
+									"No reason provided",
+							},
+							null,
+							2,
+						),
+					},
+				],
+				_meta: {
+					timestamp: new Date().toISOString(),
+					database: args.database,
+					collection: args.collection,
+				},
+			};
+		} catch (error: any) {
+			// Handle specific MongoDB errors
+			if (error.code === 48) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' already exists in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Error creating collection: ${error.message}`,
+					},
+				],
+				isError: true,
+			};
+		} finally {
+			// Always close the connection
+			if (client) {
+				await client.close();
+			}
+		}
+	},
+};
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\drop-collection\index.ts
+====================================================================================================
+
+// src/tools/drop-collection/index.ts
+import { z } from "zod";
+import { MongoClient } from "mongodb";
+
+export const DropCollectionTool = {
+	name: "drop_collection",
+	description: "[Database administration] : Drop a collection from MongoDB database with user confirmation",
+	inputSchema: {
+		uri: z
+			.string()
+			.describe(
+				"URI of the MongoDB database where collection will be dropped",
+			),
+		database: z
+			.string()
+			.describe("Name of the database where collection will be dropped"),
+		collection: z.string().describe("Name of the collection to drop"),
+	},
+	execute: async (
+		args: {
+			uri: string;
+			database: string;
+			collection: string;
+		},
+		extra: any, // Contains { server: McpServer }
+	) => {
+		let client: MongoClient | null = null;
+
+		try {
+			// Connect to MongoDB first to check if collection exists
+			client = new MongoClient(args.uri);
+			await client.connect();
+
+			const db = client.db(args.database);
+
+			// Check if collection exists before prompting user
+			const collections = await db.listCollections({ name: args.collection }).toArray();
+			if (collections.length === 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' does not exist in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Collection exists, now prompt for confirmation
+			const confirmationResult = await extra.server.elicitInput({
+				message: `⚠️ You are about to permanently drop a collection:\n\nDatabase: ${args.database}\nCollection: ${args.collection}\n\n⚠️ WARNING: This action cannot be undone and all data in this collection will be permanently lost!\n\nDo you want to proceed?`,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						action: {
+							type: "string",
+							enum: ["yes", "no"],
+							title: "Confirm Drop",
+							description:
+								"Choose 'yes' to drop the collection or 'no' to cancel",
+						},
+						reason: {
+							type: "string",
+							title: "Reason (optional)",
+							description:
+								"Why are you dropping this collection?",
+						},
+					},
+					required: ["action"],
+				},
+			});
+
+			// Handle user's decision
+			if (
+				confirmationResult.action !== "accept" ||
+				confirmationResult.content?.action !== "yes"
+			) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Collection drop cancelled by user.${confirmationResult.content?.reason ? ` Reason: ${confirmationResult.content.reason}` : ""}`,
+						},
+					],
+					isError: false,
+				};
+			}
+
+			// Drop the collection
+			const result = await db.collection(args.collection).drop();
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								success: true,
+								database: args.database,
+								collection: args.collection,
+								message: `Collection '${args.collection}' dropped successfully from database '${args.database}'`,
+								dropped: result,
+								reason:
+									confirmationResult.content?.reason ||
+									"No reason provided",
+							},
+							null,
+							2,
+						),
+					},
+				],
+				_meta: {
+					timestamp: new Date().toISOString(),
+					database: args.database,
+					collection: args.collection,
+				},
+			};
+		} catch (error: any) {
+			// Handle specific MongoDB errors
+			if (error.code === 26) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' does not exist in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Error dropping collection: ${error.message}`,
+					},
+				],
+				isError: true,
+			};
+		} finally {
+			// Always close the connection
+			if (client) {
+				await client.close();
+			}
+		}
+	},
+};
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\index.ts
+====================================================================================================
+
+// src/tools/index.ts
+import { CreateCollectionTool } from "./create-collection/index.js";
+import { ListCollectionsTool } from "./list-collections/index.js";
+import { DropCollectionTool } from "./drop-collection/index.js";
+import { RenameCollectionTool } from "./rename-collection/index.js";
+import { CollectionStatsTool } from "./collection-stats/index.js";
+
+export const tools = [CreateCollectionTool, ListCollectionsTool, DropCollectionTool, RenameCollectionTool, CollectionStatsTool];
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\list-collections\index.ts
+====================================================================================================
+
+// src/tools/list-collections/index.ts
+import { z } from "zod";
+import { MongoClient } from "mongodb";
+
+export const ListCollectionsTool = {
+	name: "list_collections",
+	description: "[Database administration] : List all collections in a MongoDB database",
+	inputSchema: {
+		database: z
+			.string()
+			.describe("Name of the database to list collections from"),
+	},
+	execute: async (
+		args: {
+			database: string;
+		},
+		extra: any, // Contains { server: McpServer }
+	) => {
+		let client: MongoClient | null = null;
+
+		try {
+			// Get MongoDB URI from environment variable
+			const uri = process.env.MONGODB_URI;
+			if (!uri) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "Error: MONGODB_URI environment variable is not set",
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Connect to MongoDB
+			client = new MongoClient(uri);
+			await client.connect();
+
+			const db = client.db(args.database);
+
+			// Get list of collections
+			const collections = await db.listCollections().toArray();
+
+			// Extract collection names and basic info
+			const collectionInfo = collections.map(collection => ({
+				name: collection.name,
+				type: collection.type || 'collection',
+				options: (collection as any).options || {},
+				info: (collection as any).info || {}
+			}));
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								success: true,
+								database: args.database,
+								collections: collectionInfo,
+								totalCollections: collectionInfo.length,
+								message: `Found ${collectionInfo.length} collections in database '${args.database}'`,
+							},
+							null,
+							2,
+						),
+					},
+				],
+				_meta: {
+					timestamp: new Date().toISOString(),
+					database: args.database,
+					collectionCount: collectionInfo.length,
+				},
+			};
+		} catch (error: any) {
+			// Handle MongoDB connection errors
+			if (error.code === 18) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Authentication failed for database '${args.database}'. Check URI credentials.`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Handle database not found errors
+			if (error.code === 26) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Database '${args.database}' not found.`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Error listing collections: ${error.message}`,
+					},
+				],
+				isError: true,
+			};
+		} finally {
+			// Always close the connection
+			if (client) {
+				await client.close();
+			}
+		}
+	},
+};
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\src\tools\rename-collection\index.ts
+====================================================================================================
+
+// src/tools/rename-collection/index.ts
+import { z } from "zod";
+import { MongoClient } from "mongodb";
+
+export const RenameCollectionTool = {
+	name: "rename_collection",
+	description: "[Database administration] : Rename a collection in MongoDB database with user confirmation",
+	inputSchema: {
+		uri: z
+			.string()
+			.describe(
+				"URI of the MongoDB database where collection will be renamed",
+			),
+		database: z
+			.string()
+			.describe("Name of the database where collection will be renamed"),
+		collection: z.string().describe("Current name of the collection to rename"),
+		newName: z.string().describe("New name for the collection"),
+	},
+	execute: async (
+		args: {
+			uri: string;
+			database: string;
+			collection: string;
+			newName: string;
+		},
+		extra: any, // Contains { server: McpServer }
+	) => {
+		let client: MongoClient | null = null;
+
+		try {
+			// Connect to MongoDB first to check if collection exists
+			client = new MongoClient(args.uri);
+			await client.connect();
+
+			const db = client.db(args.database);
+
+			// Check if source collection exists
+			const sourceCollections = await db.listCollections({ name: args.collection }).toArray();
+			if (sourceCollections.length === 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' does not exist in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Check if target collection name already exists
+			const targetCollections = await db.listCollections({ name: args.newName }).toArray();
+			if (targetCollections.length > 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.newName}' already exists in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			// Collection exists and new name is available, now prompt for confirmation
+			const confirmationResult = await extra.server.elicitInput({
+				message: `⚠️ You are about to rename a collection:\n\nDatabase: ${args.database}\nFrom: ${args.collection}\nTo: ${args.newName}\n\nDo you want to proceed?`,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						action: {
+							type: "string",
+							enum: ["yes", "no"],
+							title: "Confirm Rename",
+							description:
+								"Choose 'yes' to rename the collection or 'no' to cancel",
+						},
+						reason: {
+							type: "string",
+							title: "Reason (optional)",
+							description:
+								"Why are you renaming this collection?",
+						},
+					},
+					required: ["action"],
+				},
+			});
+
+			// Handle user's decision
+			if (
+				confirmationResult.action !== "accept" ||
+				confirmationResult.content?.action !== "yes"
+			) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Collection rename cancelled by user.${confirmationResult.content?.reason ? ` Reason: ${confirmationResult.content.reason}` : ""}`,
+						},
+					],
+					isError: false,
+				};
+			}
+
+			// Rename the collection
+			await db.collection(args.collection).rename(args.newName);
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify(
+							{
+								success: true,
+								database: args.database,
+								oldName: args.collection,
+								newName: args.newName,
+								message: `Collection '${args.collection}' renamed successfully to '${args.newName}' in database '${args.database}'`,
+								reason:
+									confirmationResult.content?.reason ||
+									"No reason provided",
+							},
+							null,
+							2,
+						),
+					},
+				],
+				_meta: {
+					timestamp: new Date().toISOString(),
+					database: args.database,
+					oldName: args.collection,
+					newName: args.newName,
+				},
+			};
+		} catch (error: any) {
+			// Handle specific MongoDB errors
+			if (error.code === 26) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Error: Collection '${args.collection}' does not exist in database '${args.database}'`,
+						},
+					],
+					isError: true,
+				};
+			}
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Error renaming collection: ${error.message}`,
+					},
+				],
+				isError: true,
+			};
+		} finally {
+			// Always close the connection
+			if (client) {
+				await client.close();
+			}
+		}
+	},
+};
+
+
+====================================================================================================
+📁 FILE: apps\mongodb-mcp\tsconfig.json
+====================================================================================================
+
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "Node16",
+		"moduleResolution": "Node16",
+		"outDir": "./build",
+		"rootDir": "./src",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"types": ["node"]
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules"]
+}
+
+
