@@ -1,3 +1,5 @@
+// apps/mongodb-mcp/src/tools/data-administration/drop-database/index.ts
+
 import { z } from "zod";
 import {
 	createErrorResponse,
@@ -8,12 +10,10 @@ import { FormGenerator } from "../../../utils/form-generator";
 
 export const DropDatabasesTool = {
 	name: "drop_databases",
-	description:
-		"Drop/Delete multiple databases from MongoDB with selection form",
+	description: "[Database Administration] Permanently delete multiple databases. Interactive form with confirmation. System dbs (admin/config/local) protected.",
 	inputSchema: {},
 	execute: async (args: any, extra: any) => {
 		try {
-			// Test connection first
 			await MongoDBUtils.testConnection();
 
 			const client = await MongoDBUtils.getClient();
@@ -21,8 +21,6 @@ export const DropDatabasesTool = {
 			const result = await admin.listDatabases();
 
 			const systemDatabases = ["admin", "config", "local"];
-
-			// Filter out system databases
 			const userDatabases = result.databases.filter(
 				(db: any) => !systemDatabases.includes(db.name),
 			);
@@ -34,7 +32,7 @@ export const DropDatabasesTool = {
 				);
 			}
 
-			// Create dynamic form schema with checkbox for each database
+			// Create dynamic form schema
 			const properties: Record<string, any> = {};
 
 			userDatabases.forEach((db: any) => {
@@ -46,12 +44,10 @@ export const DropDatabasesTool = {
 				};
 			});
 
-			// Add confirmation field
 			properties.confirmation = {
 				type: "string",
 				title: "Confirmation",
-				description:
-					"Type 'DELETE' to confirm dropping selected databases",
+				description: "Type 'DELETE' to confirm",
 				enum: ["DELETE"],
 			};
 
@@ -61,19 +57,18 @@ export const DropDatabasesTool = {
 				required: ["confirmation"],
 			};
 
-			const formSchema =
-				FormGenerator.generateFormSchema(selectionSchema);
+			const formSchema = FormGenerator.generateFormSchema(selectionSchema);
 
 			const resultForm = await extra.server.elicitInput({
 				mode: "form",
-				message: `⚠️ **DANGER: Drop Databases**\n\nYou are about to permanently delete databases. This action is **IRREVERSIBLE**! All data will be lost.\n\nSelect the databases you want to drop by checking the boxes below, then type 'DELETE' to confirm.`,
+				message: `⚠️ DANGER: Permanently delete databases. IRREVERSIBLE! Select databases and type 'DELETE' to confirm.`,
 				requestedSchema: formSchema,
 			});
 
 			if (resultForm.action !== "accept") {
 				return createSuccessResponse(
 					{ cancelled: true },
-					"Database drop operation cancelled",
+					"Operation cancelled",
 				);
 			}
 
@@ -81,24 +76,22 @@ export const DropDatabasesTool = {
 
 			if (confirmation !== "DELETE") {
 				return createErrorResponse(
-					"Confirmation failed. Type 'DELETE' to confirm.",
+					"Type 'DELETE' to confirm",
 					"CONFIRMATION_FAILED",
 				);
 			}
 
-			// Get selected databases (where value is true)
 			const selectedDatabases = Object.entries(dbSelections)
 				.filter(([_, selected]) => selected === true)
 				.map(([dbName]) => dbName);
 
 			if (selectedDatabases.length === 0) {
 				return createErrorResponse(
-					"No databases selected for deletion",
+					"No databases selected",
 					"NO_DATABASES_SELECTED",
 				);
 			}
 
-			// Drop each selected database
 			const droppedDatabases: string[] = [];
 			const failedDatabases: { name: string; error: string }[] = [];
 
@@ -109,10 +102,7 @@ export const DropDatabasesTool = {
 				} catch (error) {
 					failedDatabases.push({
 						name: dbName,
-						error:
-							error instanceof Error
-								? error.message
-								: "Unknown error",
+						error: error instanceof Error ? error.message : "Unknown error",
 					});
 				}
 			}
@@ -124,13 +114,11 @@ export const DropDatabasesTool = {
 					totalDropped: droppedDatabases.length,
 					totalFailed: failedDatabases.length,
 				},
-				`Successfully dropped ${droppedDatabases.length} database(s). Failed: ${failedDatabases.length}`,
+				`Dropped ${droppedDatabases.length} db(s). Failed: ${failedDatabases.length}`,
 			);
 		} catch (error) {
 			return createErrorResponse(
-				error instanceof Error
-					? error.message
-					: "Failed to drop databases",
+				error instanceof Error ? error.message : "Failed to drop databases",
 				"DATABASE_DROP_FAILED",
 			);
 		}

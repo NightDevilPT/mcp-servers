@@ -17,22 +17,22 @@ The MongoDB MCP Server provides tools for interacting with MongoDB databases thr
 |------|-------------|----------|--------|
 | `create_database` | Create a new database in MongoDB | Database Administration | ✅ COMPLETED |
 | `list_databases` | List all databases in MongoDB instance | Database Administration | ✅ COMPLETED |
+| `drop_database` | Delete a database (with user confirmation) | Database Administration | ✅ COMPLETED |
+| `list_collections` | List all collections in a database | Database Administration | ✅ COMPLETED |
+| `create_collection` | Create a new collection with schema validation | Database Administration | ✅ COMPLETED |
 
 ---
 
-## ⏳ PENDING TOOLS
+## PENDING TOOLS
 
 ### Database Administration (Remaining)
 
 | Tool | Description | Priority |
 |------|-------------|----------|
-| `drop_database` | Delete a database (with user confirmation) | High |
-| `database_stats` | Get statistics for a specific database | Medium |
-| `list_collections` | List all collections in a database | High |
-| `create_collection` | Create a new collection with schema validation | High |
 | `drop_collection` | Delete a collection (with user confirmation) | High |
 | `rename_collection` | Rename an existing collection | Medium |
 | `collection_stats` | Get statistics for a specific collection | Medium |
+| `database_stats` | Get statistics for a specific database | Medium |
 
 ### CRUD Operations (9 tools)
 
@@ -82,13 +82,13 @@ The MongoDB MCP Server provides tools for interacting with MongoDB databases thr
 
 | Category | Total Tools | Completed | Remaining |
 |----------|-------------|-----------|-----------|
-| Database Administration | 9 | 2 | 7 |
+| Database Administration | 9 | 6 | 3 |
 | CRUD Operations | 9 | 0 | 9 |
 | Aggregation | 1 | 0 | 1 |
 | Index Management | 3 | 0 | 3 |
 | Bulk Operations | 1 | 0 | 1 |
 | Transactions | 3 | 0 | 3 |
-| **TOTAL** | **26** | **2** | **24** |
+| **TOTAL** | **26** | **6** | **20** |
 
 ---
 

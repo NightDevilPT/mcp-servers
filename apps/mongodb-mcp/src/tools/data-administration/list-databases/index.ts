@@ -1,3 +1,5 @@
+// apps/mongodb-mcp/src/tools/data-administration/list-databases/index.ts
+
 import { z } from "zod";
 import {
 	createErrorResponse,
@@ -7,18 +9,19 @@ import { MongoDBUtils } from "../../../utils/mongodb.utils";
 
 export const ListDatabasesTool = {
 	name: "list_databases",
-	description: "List all databases in MongoDB instance",
+	description:
+		"[Database Administration] List all databases. Optionally include size and system dbs (admin/config/local).",
 	inputSchema: {
 		includeSize: z
 			.boolean()
 			.optional()
 			.default(false)
-			.describe("Include database size information"),
+			.describe("Include database size"),
 		includeSystemDatabases: z
 			.boolean()
 			.optional()
 			.default(false)
-			.describe("Include system databases (admin, config, local)"),
+			.describe("Include system dbs"),
 	},
 	execute: async (
 		args: { includeSize?: boolean; includeSystemDatabases?: boolean },
@@ -35,7 +38,6 @@ export const ListDatabasesTool = {
 			const result = await admin.listDatabases();
 
 			const systemDatabases = ["admin", "config", "local"];
-
 			let filteredDatabases = result.databases;
 
 			if (!includeSystemDatabases) {
@@ -44,20 +46,16 @@ export const ListDatabasesTool = {
 				);
 			}
 
-			let databases: any[];
-
-			if (includeSize) {
-				databases = filteredDatabases.map((db: any) => ({
-					name: db.name,
-					sizeOnDisk: db.sizeOnDisk,
-					empty: db.empty,
-				}));
-			} else {
-				databases = filteredDatabases.map((db: any) => ({
-					name: db.name,
-					empty: db.empty,
-				}));
-			}
+			const databases = includeSize
+				? filteredDatabases.map((db: any) => ({
+						name: db.name,
+						sizeOnDisk: db.sizeOnDisk,
+						empty: db.empty,
+					}))
+				: filteredDatabases.map((db: any) => ({
+						name: db.name,
+						empty: db.empty,
+					}));
 
 			const response: any = {
 				databases,
@@ -71,10 +69,8 @@ export const ListDatabasesTool = {
 				);
 			}
 
-			return createSuccessResponse(
-				response,
-				`Found ${databases.length} database(s)${!includeSystemDatabases ? " (excluding system databases)" : ""}`,
-			);
+			const msg = `Found ${databases.length} db(s)${!includeSystemDatabases ? " (excl system)" : ""}`;
+			return createSuccessResponse(response, msg);
 		} catch (error) {
 			return createErrorResponse(
 				error instanceof Error
